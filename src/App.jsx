@@ -113,7 +113,7 @@ const App = () => {
       setInformation(response);
       return;
     } else if (command.includes("what is your age")) {
-      const response = "Hello Sir I'm Jarvis, I'm 2 day old";
+      const response = "I don't really have an age. I'm an AI assistant, and I'm always learning and improving.";
       speakText(response);
       setInformation(response);
       return;
