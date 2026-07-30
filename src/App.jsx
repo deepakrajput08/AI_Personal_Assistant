@@ -2,60 +2,107 @@ import React, { useEffect, useRef, useState } from "react";
 import img from "./ai-generated-7963061_640.jpg";
 
 const App = () => {
-  const [transcript, setTarnscript] = useState("");
+  const [transcript, setTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [information, setInformation] = useState("");
-  const [voices, setvoice] = useState([]);
+  const [voices, setVoices] = useState([]);
 
-  const SpeechRecognition =
-    window.SpeechRecognition || window.webkitSpeechRecognition;
-  const recognition = new SpeechRecognition();
+  const recognitionRef = useRef(null);
 
-  const loadVoice = () => {
-    const allVoice = window.speechSynthesis.getVoices();
-    setvoice(allVoice);
-  };
-
+  // -----------------------------
+  // Load Speech Recognition
+  // -----------------------------
   useEffect(() => {
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = loadVoice;
-    } else {
-      loadVoice();
-    }
-  }, []);
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  const startListening = () => {
-    recognition.start();
-    setIsListening(true);
-  };
-
-  recognition.onresult = (event) => {
-    const spokenText = event.results[0][0].transcript.toLowerCase();
-    setTarnscript(spokenText);
-    handleVoiceCommand(spokenText);
-  };
-
-  recognition.onend = () => setIsListening(false);
-
-  const speakText = (text) => {
-    if (voices.length === 0) {
-      console.warn("No voice available yet.");
+    if (!SpeechRecognition) {
+      alert("Speech Recognition is not supported in this browser.");
       return;
     }
 
+    recognitionRef.current = new SpeechRecognition();
+
+    recognitionRef.current.lang = "en-US";
+    recognitionRef.current.continuous = false;
+    recognitionRef.current.interimResults = false;
+
+    recognitionRef.current.onresult = (event) => {
+      const spokenText = event.results[0][0].transcript
+        .toLowerCase()
+        .trim();
+
+      console.log("Recognized:", spokenText);
+
+      setTranscript(spokenText);
+      handleVoiceCommand(spokenText);
+    };
+
+    recognitionRef.current.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current.onerror = (event) => {
+      console.log(event.error);
+      setIsListening(false);
+    };
+  }, []);
+
+  // -----------------------------
+  // Load Voices
+  // -----------------------------
+  useEffect(() => {
+    const loadVoices = () => {
+      const allVoices = window.speechSynthesis.getVoices();
+      setVoices(allVoices);
+    };
+
+    loadVoices();
+
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  // -----------------------------
+  // Start Listening
+  // -----------------------------
+  const startListening = () => {
+    if (!recognitionRef.current) return;
+
+    setInformation("");
+    setTranscript("");
+
+    recognitionRef.current.start();
+    setIsListening(true);
+  };
+
+  // -----------------------------
+  // Speak Function
+  // -----------------------------
+  const speakText = (text) => {
+    window.speechSynthesis.cancel();
+
     const utterance = new SpeechSynthesisUtterance(text);
 
-    const maleEnglishVoice =
+    const voice =
       voices.find(
-        (voice) =>
-          voice.lang.startsWith("en-") &&
-          voice.name.toLowerCase().includes("male"),
+        (v) =>
+          v.lang.startsWith("en") &&
+          v.name.toLowerCase().includes("male")
       ) ||
-      voices.find((voice) => voice.lang.startsWith("en-")) ||
+      voices.find((v) => v.lang.startsWith("en")) ||
       voices[0];
 
-    utterance.voice = maleEnglishVoice;
-    utterance.lang = maleEnglishVoice.lang || "en-US";
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    } else {
+      utterance.lang = "en-US";
+    }
+
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -63,142 +110,285 @@ const App = () => {
     window.speechSynthesis.speak(utterance);
   };
 
+  // -----------------------------
+  // Wikipedia API
+  // -----------------------------
+  const fetchPersonData = async (person) => {
+    try {
+      const response = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+          person
+        )}`
+      );
+
+      if (!response.ok) {
+        throw new Error("API Error");
+      }
+
+      const data = await response.json();
+
+      if (data?.title && data?.extract) {
+        return {
+          name: data.title,
+          extract: data.extract.split(".")[0],
+        };
+      }
+
+      return null;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  };
+
+  // -----------------------------
+  // Google Search
+  // -----------------------------
+  const performGoogleSearch = (query) => {
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    window.open(url, "_blank");
+  };
+
+  // -----------------------------
+  // Voice Commands
+  // -----------------------------
   const handleVoiceCommand = async (command) => {
     command = command
       .toLowerCase()
       .replace(/[.,!?]/g, "")
       .trim();
 
-    if (command.startsWith("open ")) {
-      const site = command.replace(/^open\s+/, "");
+    console.log(command);
 
-      const sitesMap = {
-        youtube: "https://www.youtube.com",
-        facebook: "https://www.facebook.com",
-        google: "https://www.google.com",
-        twitter: "https://www.twitter.com",
-        instagram: "https://www.instagram.com",
-      };
+    // Greeting
+    if (
+      command.includes("hey jarvis") ||
+      command.includes("hello jarvis") ||
+      command.includes("hi jarvis")
+    ) {
+      const response = "Hello Sir, I am Jarvis. How can I help you today?";
 
-      if (sitesMap[site]) {
-        speakText(`Opening ${site}`);
-        window.open(sitesMap[site], "_blank");
-        setInformation(`Opened ${site}`);
-      } else {
-        speakText(`I don't know how to open ${site}`);
-        setInformation(`Could not find the website for  ${site}`);
-      }
+      setInformation(response);
+      speakText(response);
       return;
     }
 
+    // Name
     if (command.includes("what is your name")) {
       const response =
-        "Hello Sir I'm Jarvis, Your voice assistant created by Web Dev Deepak Rajput";
-      speakText(response);
+        "I am Jarvis, your AI voice assistant created by Web Dev Deepak Rajput.";
+
       setInformation(response);
-      return;
-    } else if (command.includes("who created you?")) {
-      const response = "I'm Jarvis, created by Deepak Rajput";
       speakText(response);
-      setInformation(response);
-      return;
-    } else if (command.includes("hello, jarvis.")) {
-      const response = "Hello Sir I'm Jarvis, How can i help you";
-      speakText(response);
-      setInformation(response);
-      return;
-    } else if (command.includes("hey, jarvis.")) {
-      const response = "Hello Sir I'm Jarvis, How can i help you";
-      speakText(response);
-      setInformation(response);
-      return;
-    } else if (command.includes("what is your age")) {
-      const response = "I don't really have an age. I'm an AI assistant, and I'm always learning and improving.";
-      speakText(response);
-      setInformation(response);
       return;
     }
 
-    // List of famous people
+    // Creator
+    if (
+      command.includes("who created you") ||
+      command.includes("who made you")
+    ) {
+      const response =
+        "I was created by Web Dev Deepak Rajput.";
+
+      setInformation(response);
+      speakText(response);
+      return;
+    }
+
+    // Age
+    if (command.includes("what is your age")) {
+      const response =
+        "I don't have an age. I am an AI assistant.";
+
+      setInformation(response);
+      speakText(response);
+      return;
+    }
+        // -----------------------------
+    // Open Websites
+    // -----------------------------
+    if (command.startsWith("open ")) {
+      const site = command.replace("open ", "").trim();
+
+      const websites = {
+        youtube: "https://www.youtube.com",
+        google: "https://www.google.com",
+        facebook: "https://www.facebook.com",
+        instagram: "https://www.instagram.com",
+        twitter: "https://twitter.com",
+        github: "https://github.com",
+        linkedin: "https://www.linkedin.com",
+        whatsapp: "https://web.whatsapp.com",
+        gmail: "https://mail.google.com",
+        netflix: "https://www.netflix.com",
+      };
+
+      if (websites[site]) {
+        speakText(`Opening ${site}`);
+        setInformation(`Opening ${site}`);
+        window.open(websites[site], "_blank");
+      } else {
+        const response = `Sorry, I don't know how to open ${site}.`;
+
+        speakText(response);
+        setInformation(response);
+      }
+
+      return;
+    }
+
+    // -----------------------------
+    // Current Time
+    // -----------------------------
+    if (
+      command.includes("what time is it") ||
+      command.includes("tell me the time") ||
+      command.includes("current time")
+    ) {
+      const time = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const response = `The current time is ${time}`;
+
+      setInformation(response);
+      speakText(response);
+      return;
+    }
+
+    // -----------------------------
+    // Current Date
+    // -----------------------------
+    if (
+      command.includes("what is today's date") ||
+      command.includes("today date") ||
+      command.includes("what is the date")
+    ) {
+      const date = new Date().toLocaleDateString(undefined, {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+      const response = `Today is ${date}`;
+
+      setInformation(response);
+      speakText(response);
+      return;
+    }
+
+    // -----------------------------
+    // Famous People
+    // -----------------------------
     const famousPeople = [
       "bill gates",
-      "mark zuckerberg",
       "elon musk",
-      "steve jobs",
-      "warren buffet",
-      "barack obama",
+      "mark zuckerberg",
       "jeff bezos",
+      "steve jobs",
+      "barack obama",
+      "warren buffett",
       "sundar pichai",
+      "satya nadella",
       "mukesh ambani",
       "virat kohli",
       "sachin tendulkar",
+      "ms dhoni",
+      "narendra modi",
+      "cristiano ronaldo",
+      "lionel messi",
       "brian lara",
     ];
 
-    if (famousPeople.some((person) => command.includes(person))) {
-      const person = famousPeople.find((person) => command.includes(person));
-      const personData = await fetchPersonData(person);
+    const person = famousPeople.find((item) =>
+      command.includes(item)
+    );
 
-      if (personData) {
-        const infoText = `${personData.name}, ${personData.extract}`;
-        setInformation(infoText);
-        speakText(infoText);
+    if (person) {
+      const data = await fetchPersonData(person);
 
-        performGoogleSeach(command);
+      if (data) {
+        const response = `${data.name}. ${data.extract}`;
+
+        setInformation(response);
+        speakText(response);
+
+        setTimeout(() => {
+          performGoogleSearch(person);
+        }, 1500);
       } else {
-        const fallbackMessage = "I couldn't find detailed information";
+        const response =
+          "Sorry, I couldn't find information about that person.";
 
-        speakText(fallbackMessage);
-        performGoogleSeach(command);
+        setInformation(response);
+        speakText(response);
+
+        performGoogleSearch(person);
       }
-    } else {
-      const fallbackMessage = `Here is the information about ${command}`;
 
-      speakText(fallbackMessage);
-      performGoogleSeach(command);
+      return;
     }
-  };
 
-  const fetchPersonData = async (person) => {
-    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
-      person,
-    )}`;
+    // -----------------------------
+    // Google Search Commands
+    // -----------------------------
+    if (
+      command.startsWith("search ") ||
+      command.startsWith("who is ") ||
+      command.startsWith("what is ") ||
+      command.startsWith("where is ")
+    ) {
+      const response = `Searching Google for ${command}`;
 
-    try {
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data && data.title && data.extract) {
-        return {
-          name: data.title,
-          extract: data.extract.split(".")[0],
-        };
-      } else {
-        return null;
-      }
-    } catch (error) {
-      console.error("error");
-      return null;
+      setInformation(response);
+      speakText(response);
+
+      setTimeout(() => {
+        performGoogleSearch(command);
+      }, 1000);
+
+      return;
     }
+
+    // -----------------------------
+    // Default Fallback
+    // -----------------------------
+    const response = `Searching Google for ${command}`;
+
+    setInformation(response);
+    speakText(response);
+
+    setTimeout(() => {
+      performGoogleSearch(command);
+    }, 1000);
   };
+    return (
+    <div className="voice-assistant">
+      <img
+        src={img}
+        alt="Jarvis AI"
+        className="ai-image"
+      />
 
-  const performGoogleSeach = (query) => {
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+      <h1>Jarvis Voice Assistant</h1>
 
-    window.open(searchUrl, "_blank");
-  };
+      <button
+        className="btn"
+        onClick={startListening}
+        disabled={isListening}
+      >
+        {isListening ? "🎤 Listening..." : "🎙️ Start Listening"}
+      </button>
 
-  return (
-    <div>
-      <div className="voice-assistant">
-        <img src={img} alt="AI" className="ai-image" />
-        <h2>Voice Assistant (Jarvis)</h2>
+      <div className="result-box">
+        <h3>You Said</h3>
+        <p>{transcript || "Waiting for your voice..."}</p>
 
-        <button className="btn" onClick={startListening} disabled={isListening}>
-          <i className="fas fa-microphone"></i>
-          {isListening ? "Listening..." : "Start Listening"}
-        </button>
-        <p className="tarnscript">{transcript}</p>
-        <p className="information">{information}</p>
+        <h3>Jarvis Response</h3>
+        <p>{information || "Ready to help you."}</p>
       </div>
     </div>
   );
